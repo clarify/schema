@@ -8,6 +8,7 @@ Goals:
 - Allow [any validator type](https://github.com/rs/rest-layer/issues/77) at the root-level.
 - Make deep schemas work as well as shallow (single level) ones.
 - Allow [nested serialization](https://github.com/rs/rest-layer/issues/184).
+- Allow simpler interface for [buypassing read-only fields](https://github.com/rs/rest-layer/issues/225).
 - Avoid [data race for parallel tests](https://github.com/rs/rest-layer/issues/194) when a validator definintion is reused.
 - Allow a simpler interface for generating schema documentation - as JSON Schema. E.g. do so automatically on struct-inheritance.
 
