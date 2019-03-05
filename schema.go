@@ -1,6 +1,8 @@
 package schema
 
-// Omit indicates that a payload value is/should be omitted.
+// Omit indicates that a payload value should not be included after
+// serialization or validation, except for at the top-level of a (nested)
+// schema.
 type Omit struct{}
 
 // SkipReadOnly can be used within an un-validated payload containing the
@@ -11,79 +13,77 @@ type SkipReadOnly struct {
 }
 
 // Schema lets you define a schema for performing payload parsing, validation
-// and serialization. It is JSON marshaled to JSON Schema Draft v7.
+// and serialization.
 type Schema struct {
-	Type
-	Default     interface{}       `json:"default,omitempty"`
-	Title       string            `json:"title,omitempty"`
-	Description string            `json:"description,omitempty"`
-	ReadOnly    bool              `json:"readOnly,omitempty"`
-	WriteOnly   bool              `json:"writeOnly,omitempty"`
-	Dependency  map[string]Schema `json:"dependency,omitempty"`
-	CreateOnly  bool              `json:"-"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	Type        Type   `json:"-"`
+
+	CreateOnly bool `json:"-"`
+	ReadOnly   bool `json:"readOnly,omitempty"`
+	WriteOnly  bool `json:"writeOnly,omitempty"`
+
+	Default interface{} `json:"default,omitempty"`
+}
+
+// Doc returns a JSON-encodable type describing the schema. The current form
+// is based on JSON Schema Draft 7.
+func (s Schema) Doc() Doc {
+	if td, ok := s.Type.(DocType); ok {
+		return td.Doc(s)
+	}
+	return s
 }
 
 // Parser returns the ParserFunc for the schema.
-func (s *Schema) Parser() ParserFunc {
+func (s Schema) Parser() Parser {
 	if s.Type == nil {
-		return func(in interface{}) (interface{}, error) {
-			return in, nil
-		}
+		return ParserFunc(nil)
 	}
 	return s.Type.Parser()
 }
 
-// Validate returns the ValidatorFunc for the schema.
-func (s *Schema) Validate() ValidatorFunc {
-	var typeValidator ValidatorFunc
+// Validator returns the ValidatorFunc for the schema.
+func (s Schema) Validator() Validator {
+	var val Validator
 	if s.Type != nil {
-		typeValidator = s.Type.Validator()
-	}
-	if s.ReadOnly {
-		return func(in, original interface{}) (interface{}, error) {
-			if skip, ok := in.(SkipReadOnly); ok {
-				in = skip.Value
-			} else if in != original {
-				return nil, ErrCreateOnly
-			}
-			if typeValidator == nil {
-				return in, nil
-			}
-			return typeValidator(in, original)
-		}
-	} else if s.CreateOnly {
-		return func(in, original interface{}) (interface{}, error) {
-			if skip, ok := in.(SkipReadOnly); ok {
-				in = skip.Value
-			} else if in != original {
-				return nil, ErrCreateOnly
-			}
-			if typeValidator == nil {
-				return in, nil
-			}
-			return typeValidator(in, original)
-		}
+		val = s.Type.Validator()
+	} else {
+		val = ValidatorFunc(nil)
 	}
 
-	if typeValidator == nil {
-		return func(in, original interface{}) (interface{}, error) {
-			return in, nil
-		}
+	if s.ReadOnly {
+		val = ValidatorFunc(func(in, original interface{}) (interface{}, error) {
+			if skip, ok := in.(SkipReadOnly); ok {
+				in = skip.Value
+			} else if in != original {
+				return nil, ErrCreateOnly
+			}
+			return val.Validate(in, original)
+		})
+	} else if s.CreateOnly {
+		val = ValidatorFunc(func(in, original interface{}) (interface{}, error) {
+			if skip, ok := in.(SkipReadOnly); ok {
+				in = skip.Value
+			} else if in != original {
+				return nil, ErrCreateOnly
+			}
+			return val.Validate(in, original)
+		})
 	}
-	return typeValidator
+
+	return val
 }
 
 // Serializer returns the SerializerFunc for the schema.
-func (s *Schema) Serializer() SerializerFunc {
+func (s Schema) Serializer() Serializer {
 	if s.WriteOnly {
-		return func(in interface{}) (interface{}, error) {
+		return SerializerFunc(func(in interface{}) (interface{}, error) {
 			return Omit{}, nil
-		}
+		})
 	}
 	if s.Type == nil {
-		return func(in interface{}) (interface{}, error) {
-			return in, nil
-		}
+		return SerializerFunc(nil)
 	}
 	return s.Type.Serializer()
 }
